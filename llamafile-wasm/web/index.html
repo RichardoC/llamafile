@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>llamafile in the browser</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%A6%99</text></svg>">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfaf7;
+    --panel: #ffffff;
+    --ink: #1b1a17;
+    --muted: #6b675e;
+    --line: #e2ddd2;
+    --accent: #b1560f;
+    --accent-ink: #ffffff;
+    --user-bg: #f1ece1;
+    --assistant-bg: #ffffff;
+    --ok: #2c6e49;
+    --err: #a52121;
+    --err-bg: #fdeeee;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f;
+      --panel: #1e1d17;
+      --ink: #eceadf;
+      --muted: #a09a8b;
+      --line: #33312a;
+      --accent: #e08b3c;
+      --accent-ink: #16150f;
+      --user-bg: #262418;
+      --assistant-bg: #1e1d17;
+      --ok: #79c99a;
+      --err: #ff9b8f;
+      --err-bg: #2e1b19;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
+  header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .tagline { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  h2 {
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 10px; }
+  .grow { flex: 1 1 320px; min-width: 0; }
+  label.inline { color: var(--muted); font-size: 13px; }
+  input[type=text], textarea, input[type=file] {
+    font: inherit;
+    color: inherit;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    width: 100%;
+  }
+  input[type=text] { font-family: var(--mono); font-size: 12.5px; }
+  input[type=file] { padding: 6px 8px; font-size: 13px; }
+  textarea { resize: vertical; min-height: 68px; }
+  input:focus-visible, textarea:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  button {
+    font: 600 14px/1 inherit;
+    padding: 9px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+  button[disabled] { opacity: 0.45; cursor: not-allowed; }
+  progress {
+    width: 100%;
+    height: 8px;
+    accent-color: var(--accent);
+    display: block;
+  }
+  #progress-wrap { margin-top: 12px; }
+  #progress-wrap[hidden] { display: none; }
+  .meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  #status::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 7px;
+    vertical-align: 1px;
+    background: var(--muted);
+  }
+  #status[data-state=ready]::before { background: var(--ok); }
+  #status[data-state=error]::before { background: var(--err); }
+  #status[data-state=loading]::before,
+  #status[data-state=generating]::before { background: var(--accent); }
+  #status-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  #model-info:empty { display: none; }
+  #model-info {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #error {
+    border: 1px solid var(--err);
+    background: var(--err-bg);
+    color: var(--err);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    font-size: 13.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #error[hidden] { display: none; }
+  #error strong { display: block; margin-bottom: 4px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+  #messages { display: flex; flex-direction: column; gap: 10px; min-height: 60px; }
+  #messages:empty::after {
+    content: "No messages yet — load a model, then say hello.";
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .message { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .message[data-role=user] { background: var(--user-bg); }
+  .message[data-role=assistant] { background: var(--assistant-bg); }
+  .message[data-role=error] { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+  .message-role {
+    font: 600 10px/1 var(--mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .message-content { white-space: pre-wrap; word-break: break-word; min-height: 1.2em; }
+  .message-content:empty::after { content: "▌"; color: var(--muted); }
+  #composer { margin-top: 14px; }
+  #composer-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  #perf { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 12px; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 8px; }
+</style>
+<script>
+  // Defined synchronously so tests can await it no matter how early they poll.
+  window.__llamafileState = 'idle';
+  window.llamafileReady = new Promise((resolve, reject) => {
+    window.__llamafileReadyResolve = resolve;
+    window.__llamafileReadyReject = reject;
+  });
+</script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🦙 llamafile in the browser</h1>
+    <span class="meta">WebAssembly</span>
+  </header>
+  <p class="tagline">
+    llama.cpp compiled to WebAssembly. The model is downloaded into this tab and runs
+    entirely on your machine — nothing is sent to a server.
+  </p>
+
+  <div id="error" hidden role="alert" aria-live="assertive"><strong>Error</strong><span id="error-text"></span></div>
+
+  <section class="panel">
+    <h2>Model</h2>
+    <div class="row">
+      <input id="model-url" class="grow" type="text" spellcheck="false" autocomplete="off"
+             aria-label="GGUF model URL"
+             value="https://huggingface.co/Segilmez06/SmolLM2-135M-Instruct-Q8_0-GGUF/resolve/main/smollm2-135m-instruct-q8_0.gguf">
+      <button id="load-model" type="button">Load model</button>
+      <button id="unload-model" type="button" class="secondary" disabled>Unload</button>
+    </div>
+    <div class="row">
+      <label class="inline" for="model-file">…or a local .gguf:</label>
+      <input id="model-file" class="grow" type="file" accept=".gguf,application/octet-stream">
+    </div>
+
+    <div id="progress-wrap" hidden>
+      <progress id="progress" max="100" value="0"></progress>
+      <div id="progress-label" class="meta"></div>
+    </div>
+
+    <div id="status-row">
+      <span id="status" class="meta" data-state="idle">Idle</span>
+      <span id="runtime" class="meta"></span>
+    </div>
+    <div id="model-info"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Chat</h2>
+    <div id="messages"></div>
+
+    <div id="composer">
+      <textarea id="prompt" placeholder="Ask something… (Enter to send, Shift+Enter for a newline)"
+                aria-label="Message"></textarea>
+      <div id="composer-actions">
+        <div class="row">
+          <button id="send" type="button" disabled>Send</button>
+          <button id="stop" type="button" class="secondary" disabled>Stop</button>
+          <span class="hint">n_predict 256 · temp 0.7 · top_p 0.9</span>
+        </div>
+        <span id="perf"></span>
+      </div>
+    </div>
+  </section>
+
+  <footer>Local inference · <span id="thread-info" class="meta"></span></footer>
+</main>
+
+<script type="module">
+import { Llamafile } from './llamafile.js';
+
+const $ = (id) => document.getElementById(id);
+const els = {
+  url: $('model-url'),
+  file: $('model-file'),
+  load: $('load-model'),
+  unload: $('unload-model'),
+  progressWrap: $('progress-wrap'),
+  progress: $('progress'),
+  progressLabel: $('progress-label'),
+  status: $('status'),
+  runtime: $('runtime'),
+  info: $('model-info'),
+  error: $('error'),
+  errorText: $('error-text'),
+  messages: $('messages'),
+  prompt: $('prompt'),
+  send: $('send'),
+  stop: $('stop'),
+  perf: $('perf'),
+  threadInfo: $('thread-info'),
+};
+
+const GEN_OPTS = { nPredict: 256, temp: 0.7, topP: 0.9, seed: -1 };
+const WASM_URL = new URL('../dist/llamafile.mjs', import.meta.url).href;
+
+const llamafile = new Llamafile({ wasmUrl: WASM_URL });
+window.llamafile = llamafile;
+
+const history = [];
+let modelReady = false;
+let generating = false;
+
+/* ------------------------------------------------------------------ status */
+
+function setState(state, text) {
+  els.status.dataset.state = state;
+  els.status.textContent = text;
+  window.__llamafileState = state;
+}
+
+function showError(err) {
+  const message = err && err.message ? err.message : String(err);
+  els.errorText.textContent = message;
+  els.error.hidden = false;
+  // Log the text as well as the object: some consoles only show "Error".
+  console.error('[llamafile]', message, err);
+  return message;
+}
+
+function clearError() {
+  els.error.hidden = true;
+  els.errorText.textContent = '';
+}
+
+function setBusy(busy) {
+  els.load.disabled = busy;
+  els.url.disabled = busy;
+  els.file.disabled = busy;
+  els.unload.disabled = busy || !modelReady;
+  els.send.disabled = busy || !modelReady || generating;
+  els.stop.disabled = !generating;
+}
+
+function bytes(n) {
+  if (!n && n !== 0) return '?';
+  const units = ['B', 'KiB', 'MiB', 'GiB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+const STAGE_LABEL = { download: 'Downloading', fs: 'Copying into the wasm filesystem', model: 'Initialising the model' };
+
+function onProgress({ stage, loaded, total }) {
+  els.progressWrap.hidden = false;
+  const label = STAGE_LABEL[stage] || stage;
+  if (total > 0) {
+    const pct = Math.max(0, Math.min(100, (loaded / total) * 100));
+    els.progress.value = pct;
+    els.progressLabel.textContent = `${label} — ${bytes(loaded)} / ${bytes(total)} (${pct.toFixed(0)}%)`;
+  } else {
+    els.progress.value = stage === 'model' ? 100 : 0;
+    els.progressLabel.textContent = `${label}…`;
+  }
+  setState('loading', `${label}…`);
+}
+
+/* ------------------------------------------------------------------- model */
+
+async function loadModel() {
+  if (generating) return;
+  clearError();
+  els.info.textContent = '';
+  els.perf.textContent = '';
+  modelReady = false;
+  setBusy(true);
+  setState('loading', 'Loading model…');
+  els.progressWrap.hidden = false;
+  els.progress.value = 0;
+
+  const file = els.file.files && els.file.files[0];
+  const url = els.url.value.trim();
+  const source = file || url;
+  const label = file ? file.name : url;
+
+  if (!source) {
+    setBusy(false);
+    setState('error', 'No model selected');
+    showError(new Error('Enter a .gguf URL or choose a local .gguf file first.'));
+    return;
+  }
+
+  const started = performance.now();
+  try {
+    await llamafile.load(source, { nCtx: 2048, onProgress });
+    const info = await llamafile.info();
+    modelReady = true;
+    const secs = ((performance.now() - started) / 1000).toFixed(1);
+    els.info.textContent = describeModel(info, label);
+    els.runtime.textContent = llamafile.usingWorker ? 'running in a Web Worker' : 'running on the main thread';
+    els.progressWrap.hidden = true;
+    setState('ready', `Ready — loaded in ${secs}s`);
+    els.prompt.focus();
+  } catch (err) {
+    modelReady = false;
+    els.progressWrap.hidden = true;
+    setState('error', 'Failed to load the model');
+    showError(err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function describeModel(info, label) {
+  if (!info) return label;
+  const parts = [];
+  if (info.desc) parts.push(info.desc);
+  if (info.n_params) parts.push(`${(info.n_params / 1e6).toFixed(1)}M params`);
+  if (info.size_bytes) parts.push(bytes(info.size_bytes));
+  if (info.n_ctx) parts.push(`n_ctx ${info.n_ctx}${info.n_ctx_train ? ` / ${info.n_ctx_train} trained` : ''}`);
+  if (info.n_vocab) parts.push(`vocab ${info.n_vocab}`);
+  parts.push(info.has_chat_template ? 'chat template: yes' : 'chat template: generic fallback');
+  return `${label}\n${parts.join(' · ')}`;
+}
+
+async function unloadModel() {
+  try {
+    await llamafile.unload();
+  } catch (err) {
+    showError(err);
+  }
+  modelReady = false;
+  els.info.textContent = '';
+  els.perf.textContent = '';
+  setState('idle', 'Model unloaded');
+  setBusy(false);
+}
+
+/* -------------------------------------------------------------------- chat */
+
+function addMessage(role, text = '') {
+  const wrap = document.createElement('div');
+  wrap.className = 'message';
+  wrap.dataset.role = role;
+  const head = document.createElement('div');
+  head.className = 'message-role';
+  head.textContent = role;
+  const body = document.createElement('div');
+  body.className = 'message-content';
+  body.textContent = text;
+  wrap.append(head, body);
+  els.messages.append(wrap);
+  wrap.scrollIntoView({ block: 'nearest' });
+  return body;
+}
+
+async function send() {
+  if (generating || !modelReady) return;
+  const content = els.prompt.value.trim();
+  if (!content) return;
+
+  clearError();
+  els.prompt.value = '';
+  history.push({ role: 'user', content });
+  addMessage('user', content);
+  const target = addMessage('assistant', '');
+
+  generating = true;
+  setBusy(false);
+  setState('generating', 'Generating…');
+
+  let text = '';
+  let tokens = 0;
+  const started = performance.now();
+  let lastPaint = 0;
+
+  try {
+    for await (const piece of llamafile.chat(history, GEN_OPTS)) {
+      text += piece;
+      tokens += 1;
+      target.textContent = text;
+      const elapsed = performance.now() - started;
+      if (elapsed - lastPaint > 120) {
+        lastPaint = elapsed;
+        els.perf.textContent = `${tokens} tok · ${(tokens / (elapsed / 1000)).toFixed(1)} tok/s`;
+        target.scrollIntoView({ block: 'nearest' });
+      }
+    }
+    history.push({ role: 'assistant', content: text });
+    setState('ready', 'Ready');
+    await showPerf(tokens, performance.now() - started);
+  } catch (err) {
+    setState('error', 'Generation failed');
+    const message = showError(err);
+    addMessage('error', message);
+  } finally {
+    generating = false;
+    setBusy(false);
+  }
+}
+
+async function showPerf(tokens, elapsedMs) {
+  const local = `${tokens} tok · ${(tokens / (elapsedMs / 1000)).toFixed(1)} tok/s`;
+  try {
+    const p = await llamafile.perf();
+    const predictTps = p.predict_ms > 0 ? (p.predicted_tokens * 1000) / p.predict_ms : 0;
+    const promptTps = p.prompt_ms > 0 ? (p.prompt_tokens * 1000) / p.prompt_ms : 0;
+    els.perf.textContent =
+      `prompt ${p.prompt_tokens} tok in ${Math.round(p.prompt_ms)} ms (${promptTps.toFixed(1)} tok/s) · ` +
+      `predicted ${p.predicted_tokens} tok in ${Math.round(p.predict_ms)} ms (${predictTps.toFixed(1)} tok/s)`;
+  } catch (_) {
+    els.perf.textContent = local;
+  }
+}
+
+async function stop() {
+  els.stop.disabled = true;
+  try {
+    await llamafile.stop();
+  } catch (err) {
+    showError(err);
+  }
+}
+
+/* ------------------------------------------------------------------- wiring */
+
+els.load.addEventListener('click', loadModel);
+els.unload.addEventListener('click', unloadModel);
+els.send.addEventListener('click', send);
+els.stop.addEventListener('click', stop);
+els.file.addEventListener('change', () => {
+  const file = els.file.files && els.file.files[0];
+  if (file) setState('idle', `Selected ${file.name} (${bytes(file.size)}) — press “Load model”`);
+});
+els.url.addEventListener('input', () => {
+  // A picked file wins over the URL, so typing a URL clears the picker.
+  if (els.file.value) els.file.value = '';
+});
+els.prompt.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    send();
+  }
+});
+window.addEventListener('error', (event) => showError(event.error || new Error(event.message)));
+window.addEventListener('unhandledrejection', (event) => showError(event.reason));
+
+els.threadInfo.textContent =
+  `${navigator.hardwareConcurrency || '?'} logical cores · ` +
+  `crossOriginIsolated: ${typeof crossOriginIsolated !== 'undefined' ? crossOriginIsolated : 'n/a'}`;
+
+/**
+ * The wasm module is a build artifact, so it may simply not exist yet. Check up
+ * front and say so on the page rather than failing later with a stack trace.
+ */
+async function probeModule() {
+  const res = await fetch(WASM_URL, { method: 'HEAD', cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+(async () => {
+  try {
+    await Promise.race([
+      probeModule(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timed out')), 5000)),
+    ]);
+    setState('idle', 'Ready to load a model');
+  } catch (err) {
+    setState('error', 'WebAssembly module not built yet');
+    showError(
+      new Error(
+        'WebAssembly module not built yet: ' + WASM_URL + ' is missing (' + err.message + ').\n' +
+        'Build it with `llamafile-wasm/build.sh`, then reload this page. ' +
+        'The rest of the page is wired up and will work as soon as dist/llamafile.mjs exists.'
+      )
+    );
+  } finally {
+    setBusy(false);
+    window.__llamafileReadyResolve({ llamafile });
+  }
+})();
+</script>
+</body>
+</html>
