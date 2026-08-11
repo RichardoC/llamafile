@@ -92,6 +92,21 @@ disabled, since a browser has no file to map.
 The module is compiled with WebAssembly SIMD (`-msimd128`), which selects
 ggml's wasm quant kernels rather than the scalar fallback.
 
+## Speed
+
+On a 4-core x86-64 container, SmolLM2-135M-Instruct Q8_0 runs at roughly
+42 tok/s prompt eval and 25 tok/s generation in Chromium 141 — single-threaded,
+on one core.
+
+Firefox works but was about 6x slower in that same container. That gap is not
+in this port: it reproduces on a 921-byte wasm module containing none of this
+code, and it survives every build-flag change (exception encoding, memory
+growth, SIMD). The cause is that the Firefox build there executed all
+WebAssembly in its baseline tier and never tiered up to the optimizing
+compiler. Whether that is specific to that container or that build is unknown,
+so do not read it as a property of Firefox generally — measure on your own
+machine before drawing conclusions.
+
 ## Limits, and where to go next
 
 - **Single-threaded.** The build deliberately does not use pthreads yet.
