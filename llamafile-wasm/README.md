@@ -46,6 +46,33 @@ Open the page, keep the pre-filled model URL (a 135M-parameter SmolLM2) or
 point it at any GGUF you like, press **Load model**, and chat. A local `.gguf`
 can be picked with the file input instead — it never leaves the machine.
 
+### Loading a model from Hugging Face
+
+Paste the repository's **resolve** URL into the model box — the same URL you
+would `curl`:
+
+```
+https://huggingface.co/<user>/<repo>/resolve/main/<file>.gguf
+```
+
+The page streams it with `fetch()`, shows download progress, and hands the
+bytes to the wasm module. Nothing is proxied: the browser talks to Hugging Face
+directly, so the model never passes through a server of yours.
+
+This works because Hugging Face serves public files with
+`Access-Control-Allow-Origin`, which is what lets a page on another origin read
+them. Two consequences worth knowing:
+
+- **Gated or private repos will not load this way.** They need an
+  `Authorization` header that a plain URL cannot carry. Download the file and
+  use the local `.gguf` picker instead.
+- **Not every host sets CORS headers.** If a download fails with a CORS error
+  in the console, the file is fine — the host simply is not offering it to
+  other origins. Download it and use the file picker.
+
+The file picker is the more private path in any case: the model is read
+straight off disk and never touches the network.
+
 `serve.py --models <dir>` exposes a directory of GGUFs at `/models/`, which is
 handy for testing without re-downloading. The server sets the cross-origin
 isolation headers and honours range requests so large models stream properly.
